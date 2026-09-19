@@ -33,7 +33,7 @@ flowchart LR
 
     docker --> containers[Containers]
     swarm --> services[Services]
-    k8s --> deployments[Deployments]
+    k8s --> workloads[Deployments, StatefulSets, VMs, CRs]
 ```
 
 ## The moving pieces

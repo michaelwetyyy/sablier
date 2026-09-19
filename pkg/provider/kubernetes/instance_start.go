@@ -48,6 +48,13 @@ func (p *Provider) InstanceStart(ctx context.Context, name string) (err error) {
 		return err
 	}
 
+	// KubeVirt VirtualMachines are resumed by switching their runStrategy to Always.
+	// This bypasses replica/resource scale mode, which does not apply to VMs.
+	if parsed.Kind == KindVirtualMachine {
+		span.SetAttributes(attribute.String("operation", "kubevirt_start"))
+		return p.virtualMachineSetRunStrategy(ctx, parsed, kubeVirtRunStrategyAlways)
+	}
+
 	// CloudNativePG Clusters are resumed by clearing the hibernation annotation
 	// rather than scaling a replica count, so they bypass the scale-mode logic.
 	if parsed.Kind == KindCNPGCluster {

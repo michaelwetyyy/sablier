@@ -40,7 +40,10 @@ func newFakeCNPGProvider(t *testing.T, objs ...runtime.Object) *Provider {
 	scheme := runtime.NewScheme()
 	dyn := fake.NewSimpleDynamicClientWithCustomListKinds(
 		scheme,
-		map[schema.GroupVersionResource]string{cnpgClusterGVR: "ClusterList"},
+		map[schema.GroupVersionResource]string{
+			cnpgClusterGVR:    "ClusterList",
+			virtualMachineGVR: "VirtualMachineList",
+		},
 		objs...,
 	)
 	return &Provider{

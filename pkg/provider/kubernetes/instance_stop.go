@@ -28,6 +28,13 @@ func (p *Provider) InstanceStop(ctx context.Context, name string) (err error) {
 		return err
 	}
 
+	// KubeVirt VirtualMachines are stopped by switching their runStrategy to Halted.
+	// This bypasses replica/resource scale mode, which does not apply to VMs.
+	if parsed.Kind == KindVirtualMachine {
+		span.SetAttributes(attribute.String("operation", "kubevirt_halt"))
+		return p.virtualMachineSetRunStrategy(ctx, parsed, kubeVirtRunStrategyHalted)
+	}
+
 	// CloudNativePG Clusters are stopped via the hibernation annotation rather than
 	// scaling a replica count, so they bypass the scale-mode logic.
 	if parsed.Kind == KindCNPGCluster {

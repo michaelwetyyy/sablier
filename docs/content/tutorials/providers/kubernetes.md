@@ -66,6 +66,16 @@ rules:
       - get     # Retrieve info about specific dep
       - list    # Events
       - watch   # Events
+  # Only required if you manage KubeVirt VirtualMachines (see below).
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get     # Retrieve VM state
+      - list    # Discovery and events
+      - watch   # Events
+      - patch   # Switch spec.runStrategy between Always and Halted
   # Only required if you manage CloudNativePG Clusters (see below).
   - apiGroups:
       - postgresql.cnpg.io
@@ -87,7 +97,7 @@ rules:
 ```
 
 {{< callout type="info" >}}
-The `postgresql.cnpg.io` and `redis.redis.opstreelabs.in` rules are optional. Sablier skips those integrations gracefully when the CRDs are absent.
+The `kubevirt.io`, `postgresql.cnpg.io` and `redis.redis.opstreelabs.in` rules are optional. Sablier skips those integrations gracefully when their CRDs are absent.
 {{< /callout >}}
 
 ## Register a Deployment
@@ -130,7 +140,7 @@ Kubernetes uses the Pod healthcheck to check if the Pod is up and running. So th
 
 On Kubernetes, Sablier keys use the public `sablierapp.dev/` prefix. To get the Kubernetes key of a key in the [Label reference](/reference/labels/), replace `sablier.` with `sablierapp.dev/`. For example, `sablier.idle.replicas` becomes `sablierapp.dev/idle.replicas`.
 
-You can set each key as a **label** or as an **annotation**, with one exception: `sablierapp.dev/enable` must always be a label (see the note below). This applies to Deployments, StatefulSets, CloudNativePG Clusters and OT-CONTAINER-KIT Redis instances.
+You can set each key as a **label** or as an **annotation**, with one exception: `sablierapp.dev/enable` must always be a label (see the note below). This applies to Deployments, StatefulSets, KubeVirt VirtualMachines, CloudNativePG Clusters and OT-CONTAINER-KIT Redis instances.
 
 Annotations are useful because Kubernetes **label values are restricted** (max 63 characters, only `[A-Za-z0-9._-]`, no commas or colons). Some Sablier values cannot be expressed as labels and must use annotations, for example:
 
@@ -165,6 +175,45 @@ spec:
 Sablier continues to read the `sablier.*` keys, for example `sablier.enable` and `sablier.group`. On Kubernetes, these keys are deprecated. A key without a prefix is [private to the user](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set), thus it can conflict with the label conventions of your organization. Use the `sablierapp.dev/` keys for new workloads.
 
 During a migration, a workload can have the two forms of a key. In this case, the `sablierapp.dev/` key takes precedence over the `sablier.` key from the same source. An annotation continues to take precedence over a label.
+
+## Register KubeVirt VirtualMachines
+
+Sablier can manage [KubeVirt](https://kubevirt.io/) `VirtualMachine` resources alongside Deployments and StatefulSets. VMs use KubeVirt's declarative `spec.runStrategy` instead of a replica count:
+
+- **Stop** sets `spec.runStrategy: Halted`.
+- **Start** sets `spec.runStrategy: Always`.
+
+When Sablier takes ownership of an older VM that still uses the deprecated `spec.running` boolean, the first start/stop transition removes `spec.running` and writes `spec.runStrategy` so the two mutually exclusive fields are never left set together.
+
+Opt in on the `VirtualMachine` itself:
+
+```yaml
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: windows-01
+  namespace: parhelion
+  labels:
+    sablierapp.dev/enable: "true"
+    sablierapp.dev/group: parhelion
+spec:
+  runStrategy: Halted
+  template:
+    # ... existing KubeVirt VM template ...
+```
+
+The names-based API identifier is `virtualmachine_<namespace>_<name>_1` with the default `_` delimiter, for example `virtualmachine_parhelion_windows-01_1`.
+
+### VirtualMachine readiness
+
+A KubeVirt VirtualMachine is considered:
+
+- `stopped` when its desired run strategy is `Halted` (or legacy `spec.running` is `false`);
+- `ready` when KubeVirt reports `status.ready: true` or `status.printableStatus: Running`;
+- `error` for KubeVirt terminal/error printable states such as `Unschedulable`, `PvcNotFound`, `ErrImagePull` or `DataVolumeError`;
+- `starting` otherwise.
+
+Sablier also watches changes to the VM's desired running state, so a VM started or halted outside Sablier participates in the normal lifecycle event stream.
 
 ## Register CloudNativePG Clusters
 

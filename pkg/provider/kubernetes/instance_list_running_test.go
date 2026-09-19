@@ -45,7 +45,10 @@ func newListTestProvider(t *testing.T, typed []runtime.Object, clusters []runtim
 		Client: k8sfake.NewSimpleClientset(typed...),
 		dynamic: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
 			runtime.NewScheme(),
-			map[schema.GroupVersionResource]string{cnpgClusterGVR: "ClusterList"},
+			map[schema.GroupVersionResource]string{
+				cnpgClusterGVR:    "ClusterList",
+				virtualMachineGVR: "VirtualMachineList",
+			},
 			clusters...,
 		),
 		delimiter: "_",

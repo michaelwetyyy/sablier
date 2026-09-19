@@ -25,5 +25,11 @@ func (p *Provider) InstanceEvents(ctx context.Context, opts provider.InstanceEve
 		informer = p.watchClusters(ctx, eventsC, wantStopped, wantStarted, wantCreated, wantRemoved)
 		go informer.Run(ctx.Done())
 	}
+	// KubeVirt is optional. Only start the dynamic informer when the
+	// VirtualMachine resource is actually served by the API server.
+	if p.virtualMachineCRDInstalled(ctx) {
+		informer = p.watchVirtualMachines(ctx, eventsC, wantStopped, wantStarted, wantCreated, wantRemoved)
+		go informer.Run(ctx.Done())
+	}
 	return sablier.InstanceEventStream{Events: eventsC, Err: errC}
 }

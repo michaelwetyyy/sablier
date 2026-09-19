@@ -10,7 +10,7 @@ import (
 
 type ParsedName struct {
 	Original  string
-	Kind      string // deployment or statefulset
+	Kind      string // deployment, statefulset, cnpgcluster, or virtualmachine
 	Namespace string
 	Name      string
 	Replicas  int32

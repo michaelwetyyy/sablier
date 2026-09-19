@@ -19,7 +19,9 @@ func (p *Provider) InstanceInspect(ctx context.Context, name string) (sablier.In
 		return p.StatefulSetInspect(ctx, parsed)
 	case KindCNPGCluster:
 		return p.ClusterInspect(ctx, parsed)
+	case KindVirtualMachine:
+		return p.VirtualMachineInspect(ctx, parsed)
 	default:
-		return sablier.InstanceInfo{}, fmt.Errorf("unsupported kind \"%s\" must be one of \"deployment\", \"statefulset\", \"cnpgcluster\"", parsed.Kind)
+		return sablier.InstanceInfo{}, fmt.Errorf("unsupported kind \"%s\" must be one of \"deployment\", \"statefulset\", \"cnpgcluster\", \"virtualmachine\"", parsed.Kind)
 	}
 }

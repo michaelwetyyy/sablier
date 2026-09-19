@@ -125,6 +125,7 @@ It provides integrations with multiple reverse proxies and different loading str
 	_ = viper.BindPFlag("strategy.blocking.default-refresh-frequency", startCmd.Flags().Lookup("strategy.blocking.default-refresh-frequency"))
 
 	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(newDemandCommand())
 	rootCmd.AddCommand(NewVersionCmd())
 
 	healthCmd := NewHealthCmd()

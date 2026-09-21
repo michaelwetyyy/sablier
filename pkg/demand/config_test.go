@@ -94,6 +94,13 @@ func TestConfigValidation(t *testing.T) {
 		}},
 	}
 
+	t.Run("last-known failure policy accepted", func(t *testing.T) {
+		conf := base
+		conf.Sources = append([]SourceConfig(nil), base.Sources...)
+		conf.Sources[0].FailurePolicy = FailurePolicyLastKnown
+		assert.NilError(t, conf.Validate())
+	})
+
 	t.Run("idle duration protects against poll jitter", func(t *testing.T) {
 		conf := base
 		conf.Sources = append([]SourceConfig(nil), base.Sources...)

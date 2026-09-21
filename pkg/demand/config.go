@@ -60,6 +60,7 @@ const (
 	SourceTypeGiteaActions = "gitea-actions"
 	FailurePolicyAwake     = "awake"
 	FailurePolicyIgnore    = "ignore"
+	FailurePolicyLastKnown = "last-known"
 )
 
 func LoadConfig(path string) (Config, error) {
@@ -123,8 +124,8 @@ func (c Config) Validate() error {
 		if source.IdleAfter < 2*c.PollInterval {
 			return fmt.Errorf("%s.idle_after must be at least twice poll_interval", prefix)
 		}
-		if source.FailurePolicy != FailurePolicyAwake && source.FailurePolicy != FailurePolicyIgnore {
-			return fmt.Errorf("%s.failure_policy must be %q or %q", prefix, FailurePolicyAwake, FailurePolicyIgnore)
+		if source.FailurePolicy != FailurePolicyAwake && source.FailurePolicy != FailurePolicyIgnore && source.FailurePolicy != FailurePolicyLastKnown {
+			return fmt.Errorf("%s.failure_policy must be %q, %q or %q", prefix, FailurePolicyAwake, FailurePolicyIgnore, FailurePolicyLastKnown)
 		}
 		if err := source.Target.validate(prefix + ".target"); err != nil {
 			return err

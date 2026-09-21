@@ -9,12 +9,19 @@ import (
 	"time"
 )
 
+type sourceState struct {
+	known  bool
+	active bool
+}
+
 type Manager struct {
 	pollInterval time.Duration
 	poker        Poker
 	sources      []NamedSource
 	logger       *slog.Logger
 	metrics      *Metrics
+	stateMu      sync.Mutex
+	states       map[string]sourceState
 }
 
 func NewManager(conf Config, logger *slog.Logger) (*Manager, error) {
@@ -38,11 +45,12 @@ func NewManager(conf Config, logger *slog.Logger) (*Manager, error) {
 		sources:      sources,
 		logger:       logger,
 		metrics:      NewMetrics(conf),
+		states:       make(map[string]sourceState, len(sources)),
 	}, nil
 }
 
 func NewManagerWithSources(pollInterval time.Duration, poker Poker, sources []NamedSource, logger *slog.Logger) *Manager {
-	return &Manager{pollInterval: pollInterval, poker: poker, sources: sources, logger: logger}
+	return &Manager{pollInterval: pollInterval, poker: poker, sources: sources, logger: logger, states: make(map[string]sourceState, len(sources))}
 }
 
 func (m *Manager) MetricsHandler() http.Handler {
@@ -90,11 +98,28 @@ func (m *Manager) reconcile(ctx context.Context, source NamedSource) {
 	if err != nil {
 		m.logger.ErrorContext(ctx, "demand source check failed",
 			slog.String("source", source.Config.Name), slog.String("type", source.Config.Type), slog.Any("error", err))
-		if source.Config.FailurePolicy != FailurePolicyAwake {
+		switch source.Config.FailurePolicy {
+		case FailurePolicyAwake:
+			active = true
+		case FailurePolicyIgnore:
 			m.metrics.ObserveSource(source.Config, false, checkErr)
 			return
+		case FailurePolicyLastKnown:
+			state := m.sourceState(source.Config.Name)
+			if !state.known {
+				// Until a source has completed one successful check, prefer an
+				// unnecessary wake over stranding work behind a sleeping target.
+				active = true
+			} else {
+				active = state.active
+			}
+		default:
+			// Config validation rejects unknown policies. Keep a conservative
+			// runtime fallback for callers using NewManagerWithSources directly.
+			active = true
 		}
-		active = true
+	} else {
+		m.setSourceState(source.Config.Name, active)
 	}
 	m.metrics.ObserveSource(source.Config, active, checkErr)
 	if !active {
@@ -108,4 +133,19 @@ func (m *Manager) reconcile(ctx context.Context, source NamedSource) {
 	}
 	m.logger.DebugContext(ctx, "renewed sablier demand session",
 		slog.String("source", source.Config.Name), slog.Duration("idle_after", source.Config.IdleAfter))
+}
+
+func (m *Manager) sourceState(name string) sourceState {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+	return m.states[name]
+}
+
+func (m *Manager) setSourceState(name string, active bool) {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+	if m.states == nil {
+		m.states = make(map[string]sourceState)
+	}
+	m.states[name] = sourceState{known: true, active: active}
 }

@@ -52,6 +52,7 @@ func TestManagerReconcile(t *testing.T) {
 		{name: "idle expires naturally", source: fakeSource{}, failurePolicy: FailurePolicyAwake, wantPokes: 0},
 		{name: "source error fails awake", source: fakeSource{err: errors.New("down")}, failurePolicy: FailurePolicyAwake, wantPokes: 1},
 		{name: "source error can ignore", source: fakeSource{err: errors.New("down")}, failurePolicy: FailurePolicyIgnore, wantPokes: 0},
+		{name: "last-known fails awake before first success", source: fakeSource{err: errors.New("down")}, failurePolicy: FailurePolicyLastKnown, wantPokes: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,4 +70,36 @@ func TestManagerReconcile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestManagerLastKnownPolicyPreservesSuccessfulState(t *testing.T) {
+	t.Parallel()
+
+	poker := &fakePoker{}
+	manager := NewManagerWithSources(time.Second, poker, []NamedSource{{
+		Config: SourceConfig{
+			Name: "test", Type: "test", FailurePolicy: FailurePolicyLastKnown,
+			IdleAfter: 10 * time.Minute, Target: TargetConfig{Group: "target"},
+		},
+		Source: fakeSource{active: true},
+	}}, testLogger())
+
+	// A successful active observation establishes last-known=active.
+	manager.reconcile(t.Context(), manager.sources[0])
+	assert.Equal(t, len(poker.calls), 1)
+
+	// A source outage while last-known=active keeps renewing the session.
+	manager.sources[0].Source = fakeSource{err: errors.New("down")}
+	manager.reconcile(t.Context(), manager.sources[0])
+	assert.Equal(t, len(poker.calls), 2)
+
+	// A successful idle observation establishes last-known=idle and does not poke.
+	manager.sources[0].Source = fakeSource{active: false}
+	manager.reconcile(t.Context(), manager.sources[0])
+	assert.Equal(t, len(poker.calls), 2)
+
+	// A later outage while last-known=idle preserves the idle countdown.
+	manager.sources[0].Source = fakeSource{err: errors.New("down")}
+	manager.reconcile(t.Context(), manager.sources[0])
+	assert.Equal(t, len(poker.calls), 2)
 }

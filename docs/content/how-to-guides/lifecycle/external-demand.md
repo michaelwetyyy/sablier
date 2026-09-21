@@ -108,9 +108,17 @@ failure_policy: ignore
 
 With `ignore`, a failed source check does not renew the session and the target may expire normally.
 
+For queues where an API outage should preserve the last successfully observed demand state, use:
+
+```yaml
+failure_policy: last-known
+```
+
+`last-known` renews the session after a failed check only when the source was active on its most recent successful check. If the source was last idle, the existing idle timer is left untouched. Before the first successful check, `last-known` behaves like `awake` so startup during an upstream outage cannot strand existing work. This is useful for CI runners: transient API failures do not reset an idle countdown, but a runner with a previously observed in-progress job stays awake.
+
 ## Gitea Actions source
 
-The `gitea-actions` source reads the repository Actions run feed. Any run whose status is not `completed` counts as demand. The token file is optional for publicly readable repositories and is read again on every poll so Kubernetes Secret rotation does not require restarting the bridge.
+The `gitea-actions` source asks Gitea for one run in each active state (`queued`, `pending`, and `in_progress`). If any of those queries returns a run, the source reports demand. This avoids scanning historical terminal runs and keeps polling fast on repositories with long Actions history. The token file is optional for publicly readable repositories and is read again on every poll so Kubernetes Secret rotation does not require restarting the bridge.
 
 ## Parhelion source
 

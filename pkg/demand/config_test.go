@@ -21,6 +21,8 @@ func TestLoadConfig(t *testing.T) {
 	path := writeDemandConfig(t, `
 poll_interval: 10s
 request_timeout: 3s
+metrics:
+  listen: :10001
 sablier:
   url: http://sablier:10000
 sources:
@@ -50,6 +52,7 @@ sources:
 	assert.NilError(t, err)
 	assert.Equal(t, conf.PollInterval, 10*time.Second)
 	assert.Equal(t, conf.RequestTimeout, 3*time.Second)
+	assert.Equal(t, conf.Metrics.Listen, ":10001")
 	assert.Equal(t, conf.Sources[0].FailurePolicy, FailurePolicyAwake)
 	assert.Equal(t, conf.Sources[0].IdleAfter, 30*time.Minute)
 	assert.Equal(t, conf.Sources[1].FailurePolicy, FailurePolicyIgnore)

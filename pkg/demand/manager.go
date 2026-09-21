@@ -14,6 +14,7 @@ type Manager struct {
 	poker        Poker
 	sources      []NamedSource
 	logger       *slog.Logger
+	metrics      *Metrics
 }
 
 func NewManager(conf Config, logger *slog.Logger) (*Manager, error) {
@@ -36,11 +37,19 @@ func NewManager(conf Config, logger *slog.Logger) (*Manager, error) {
 		poker:        NewSablierClient(client, conf.Sablier.URL),
 		sources:      sources,
 		logger:       logger,
+		metrics:      NewMetrics(conf),
 	}, nil
 }
 
 func NewManagerWithSources(pollInterval time.Duration, poker Poker, sources []NamedSource, logger *slog.Logger) *Manager {
 	return &Manager{pollInterval: pollInterval, poker: poker, sources: sources, logger: logger}
+}
+
+func (m *Manager) MetricsHandler() http.Handler {
+	if m == nil || m.metrics == nil {
+		return http.NotFoundHandler()
+	}
+	return m.metrics.Handler()
 }
 
 func (m *Manager) Run(ctx context.Context) error {
@@ -77,14 +86,17 @@ func (m *Manager) runSource(ctx context.Context, source NamedSource) {
 
 func (m *Manager) reconcile(ctx context.Context, source NamedSource) {
 	active, err := source.Source.Active(ctx)
+	checkErr := err
 	if err != nil {
 		m.logger.ErrorContext(ctx, "demand source check failed",
 			slog.String("source", source.Config.Name), slog.String("type", source.Config.Type), slog.Any("error", err))
 		if source.Config.FailurePolicy != FailurePolicyAwake {
+			m.metrics.ObserveSource(source.Config, false, checkErr)
 			return
 		}
 		active = true
 	}
+	m.metrics.ObserveSource(source.Config, active, checkErr)
 	if !active {
 		m.logger.DebugContext(ctx, "demand source idle", slog.String("source", source.Config.Name))
 		return

@@ -26,6 +26,10 @@ Create a separate demand configuration file, for example `/etc/sablier/demand.ya
 poll_interval: 10s
 request_timeout: 5s
 
+# Optional Prometheus endpoint for this demand bridge.
+metrics:
+  listen: :10001
+
 sablier:
   url: http://sablier:10000
 
@@ -60,6 +64,20 @@ sablier demand --file /etc/sablier/demand.yaml
 ```
 
 A single demand bridge can manage multiple sources and targets.
+
+## Demand bridge metrics
+
+Set `metrics.listen` to expose a Prometheus endpoint from the demand process itself. The endpoint is separate from the main Sablier server's `/metrics` route so a bridge can be deployed and scraped independently. Keep it on a trusted/internal interface unless you deliberately expose it.
+
+The bridge exports configuration as gauges immediately at startup, before any source has produced work:
+
+- `sablier_demand_target_info` identifies each configured target, source type and failure policy;
+- `sablier_demand_target_idle_after_seconds` reports the configured idle window;
+- `sablier_demand_source_active` reports the effective demand state after applying the failure policy;
+- `sablier_demand_source_check_success` distinguishes a successful source check from fail-awake behavior; and
+- `sablier_demand_source_last_check_timestamp_seconds` records when the source was last checked.
+
+No source credentials, tokens or upstream URLs are exposed as metric labels. Because target configuration is exported directly from the loaded demand file, the target inventory remains available even if the main Sablier server restarts and has not yet handled a request for that target.
 
 ## Session timing
 

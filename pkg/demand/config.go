@@ -13,8 +13,13 @@ import (
 type Config struct {
 	PollInterval   time.Duration  `mapstructure:"poll_interval"`
 	RequestTimeout time.Duration  `mapstructure:"request_timeout"`
+	Metrics        MetricsConfig  `mapstructure:"metrics"`
 	Sablier        SablierConfig  `mapstructure:"sablier"`
 	Sources        []SourceConfig `mapstructure:"sources"`
+}
+
+type MetricsConfig struct {
+	Listen string `mapstructure:"listen"`
 }
 
 type SablierConfig struct {

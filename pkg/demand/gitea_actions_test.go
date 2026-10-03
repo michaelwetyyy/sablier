@@ -31,7 +31,7 @@ func TestGiteaActionsSource(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, r.URL.Path, "/api/v1/repos/michael/homelab-gitops/actions/runs")
 				assert.Equal(t, r.URL.Query().Get("limit"), "1")
-				assert.Equal(t, r.URL.Query().Get("exclude_pull_requests"), "true")
+				assert.Equal(t, r.URL.Query().Get("exclude_pull_requests"), "false")
 				status := r.URL.Query().Get("status")
 				assert.Assert(t, status == "queued" || status == "pending" || status == "in_progress")
 				mu.Lock()

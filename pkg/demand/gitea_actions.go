@@ -80,7 +80,8 @@ func (s *GiteaActionsSource) statusActive(ctx context.Context, token, status str
 	query := url.Values{}
 	query.Set("status", status)
 	query.Set("limit", "1")
-	query.Set("exclude_pull_requests", "true")
+	// Pull-request workflows must also wake scale-to-zero CI runners.
+	query.Set("exclude_pull_requests", "false")
 
 	endpoint := fmt.Sprintf(
 		"%s/api/v1/repos/%s/%s/actions/runs?%s",

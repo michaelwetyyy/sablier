@@ -12,6 +12,21 @@ Sablier is configured through the `sablier` command. This page is generated from
 
 Sablier exposes the following commands.
 
+### `sablier demand` {#command-demand}
+
+Keep Sablier sessions alive while external work is pending
+
+### `--file` {#opt-file}
+
+Demand bridge configuration file
+
+{{< badge "string" >}} {{< badge content="Default: /etc/sablier/demand.yaml" >}}
+
+```bash
+# Command-line flag
+--file=/etc/sablier/demand.yaml
+```
+
 ### `sablier health` {#command-health}
 
 Calls the health endpoint of a Sablier instance

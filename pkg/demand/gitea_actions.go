@@ -23,12 +23,15 @@ type giteaWorkflowRuns struct {
 	} `json:"workflow_runs"`
 }
 
-type giteaActionsResult struct {
-	active bool
-	err    error
+var giteaActiveStatuses = map[string]struct{}{
+	"queued":      {},
+	"pending":     {},
+	"in_progress": {},
+	"running":     {},
+	"waiting":     {},
 }
 
-var giteaActiveStatuses = []string{"queued", "pending", "in_progress"}
+const giteaRecentRunsLimit = "20"
 
 func NewGiteaActionsSource(client *http.Client, conf GiteaActionsConfig) *GiteaActionsSource {
 	return &GiteaActionsSource{
@@ -43,44 +46,8 @@ func (s *GiteaActionsSource) Active(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	// Gitea's unfiltered Actions runs endpoint becomes expensive on repositories
-	// with significant run history. We only care whether runnable work exists, so
-	// ask for one run from each non-terminal state instead of fetching a page of
-	// mixed historical runs and filtering it client-side.
-	queryCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	results := make(chan giteaActionsResult, len(giteaActiveStatuses))
-	for _, status := range giteaActiveStatuses {
-		status := status
-		go func() {
-			active, err := s.statusActive(queryCtx, token, status)
-			results <- giteaActionsResult{active: active, err: err}
-		}()
-	}
-
-	var firstErr error
-	for range giteaActiveStatuses {
-		result := <-results
-		if result.active {
-			cancel()
-			return true, nil
-		}
-		if result.err != nil && firstErr == nil {
-			firstErr = result.err
-		}
-	}
-	if firstErr != nil {
-		return false, firstErr
-	}
-	return false, nil
-}
-
-func (s *GiteaActionsSource) statusActive(ctx context.Context, token, status string) (bool, error) {
 	query := url.Values{}
-	query.Set("status", status)
-	query.Set("limit", "1")
-	// Pull-request workflows must also wake scale-to-zero CI runners.
+	query.Set("limit", giteaRecentRunsLimit)
 	query.Set("exclude_pull_requests", "false")
 
 	endpoint := fmt.Sprintf(
@@ -99,15 +66,20 @@ func (s *GiteaActionsSource) statusActive(ctx context.Context, token, status str
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("query gitea actions status %s: %w", status, err)
+		return false, fmt.Errorf("query gitea actions: %w", err)
 	}
 	body, err := readJSONResponse(resp)
 	if err != nil {
-		return false, fmt.Errorf("query gitea actions status %s: %w", status, err)
+		return false, fmt.Errorf("query gitea actions: %w", err)
 	}
 	var payload giteaWorkflowRuns
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return false, fmt.Errorf("decode gitea actions status %s: %w", status, err)
+		return false, fmt.Errorf("decode gitea actions: %w", err)
 	}
-	return len(payload.WorkflowRuns) > 0, nil
+	for _, run := range payload.WorkflowRuns {
+		if _, active := giteaActiveStatuses[run.Status]; active {
+			return true, nil
+		}
+	}
+	return false, nil
 }

@@ -3,7 +3,7 @@ package demand
 import (
 	"net/http"
 	"net/http/httptest"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,34 +14,28 @@ func TestGiteaActionsSource(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name         string
-		activeStatus string
-		active       bool
+		name   string
+		runs   string
+		active bool
 	}{
-		{name: "queued", activeStatus: "queued", active: true},
-		{name: "pending", activeStatus: "pending", active: true},
-		{name: "in progress", activeStatus: "in_progress", active: true},
-		{name: "idle", activeStatus: "", active: false},
+		{name: "queued", runs: `[{"status":"completed"},{"status":"queued"}]`, active: true},
+		{name: "pending", runs: `[{"status":"pending"}]`, active: true},
+		{name: "in progress", runs: `[{"status":"in_progress"}]`, active: true},
+		{name: "running", runs: `[{"status":"running"}]`, active: true},
+		{name: "waiting", runs: `[{"status":"waiting"}]`, active: true},
+		{name: "idle", runs: `[{"status":"completed"},{"status":"failure"}]`, active: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var mu sync.Mutex
-			seen := map[string]bool{}
+			var requests atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
 				assert.Equal(t, r.URL.Path, "/api/v1/repos/michael/homelab-gitops/actions/runs")
-				assert.Equal(t, r.URL.Query().Get("limit"), "1")
+				assert.Equal(t, r.URL.Query().Get("limit"), giteaRecentRunsLimit)
 				assert.Equal(t, r.URL.Query().Get("exclude_pull_requests"), "false")
-				status := r.URL.Query().Get("status")
-				assert.Assert(t, status == "queued" || status == "pending" || status == "in_progress")
-				mu.Lock()
-				seen[status] = true
-				mu.Unlock()
-				if status == tc.activeStatus {
-					_, _ = w.Write([]byte(`{"workflow_runs":[{"status":"` + status + `"}]}`))
-					return
-				}
-				_, _ = w.Write([]byte(`{"workflow_runs":[]}`))
+				assert.Equal(t, r.URL.Query().Get("status"), "")
+				_, _ = w.Write([]byte(`{"workflow_runs":` + tc.runs + `}`))
 			}))
 			defer server.Close()
 
@@ -51,18 +45,17 @@ func TestGiteaActionsSource(t *testing.T) {
 			active, err := source.Active(t.Context())
 			assert.NilError(t, err)
 			assert.Equal(t, active, tc.active)
-
-			mu.Lock()
-			defer mu.Unlock()
-			assert.Assert(t, len(seen) > 0)
+			assert.Equal(t, requests.Load(), int32(1))
 		})
 	}
 }
 
-func TestGiteaActionsSourceReturnsErrorWhenNoActiveStatusSucceeds(t *testing.T) {
+func TestGiteaActionsSourceReturnsError(t *testing.T) {
 	t.Parallel()
 
+	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
@@ -73,4 +66,5 @@ func TestGiteaActionsSourceReturnsErrorWhenNoActiveStatusSucceeds(t *testing.T) 
 	active, err := source.Active(t.Context())
 	assert.Assert(t, err != nil)
 	assert.Equal(t, active, false)
+	assert.Equal(t, requests.Load(), int32(1))
 }

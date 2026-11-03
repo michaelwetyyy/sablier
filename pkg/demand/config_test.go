@@ -47,6 +47,7 @@ sources:
       token_file: /secrets/gitea
       owner: michael
       repo: homelab-gitops
+      runner_labels: [validation-check]
 `)
 	conf, err := LoadConfig(path)
 	assert.NilError(t, err)
@@ -56,6 +57,7 @@ sources:
 	assert.Equal(t, conf.Sources[0].FailurePolicy, FailurePolicyAwake)
 	assert.Equal(t, conf.Sources[0].IdleAfter, 30*time.Minute)
 	assert.Equal(t, conf.Sources[1].FailurePolicy, FailurePolicyIgnore)
+	assert.DeepEqual(t, conf.Sources[1].GiteaActions.RunnerLabels, []string{"validation-check"})
 	assert.DeepEqual(t, conf.Sources[1].Target.Names, []string{"deployment_gitea-actions_runner_1"})
 }
 
@@ -121,4 +123,22 @@ func TestConfigValidation(t *testing.T) {
 		conf.Sources = append(conf.Sources, conf.Sources[0])
 		assert.ErrorContains(t, conf.Validate(), "duplicate")
 	})
+}
+
+func TestRunnerLabelsConfigValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		labels    []string
+		wantError bool
+	}{
+		{"omitted", nil, false}, {"empty", []string{}, false},
+		{"capabilities", []string{"validation-check", "linux"}, false},
+		{"blank", []string{" "}, true}, {"empty label", []string{""}, true},
+		{"duplicate", []string{"linux", "linux"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := Config{PollInterval: time.Second, RequestTimeout: time.Second, Sablier: SablierConfig{URL: "http://sablier"}, Sources: []SourceConfig{{Name: "example", Type: SourceTypeGiteaActions, IdleAfter: time.Minute, FailurePolicy: FailurePolicyAwake, Target: TargetConfig{Group: "workers"}, GiteaActions: &GiteaActionsConfig{URL: "http://gitea", Owner: "example", Repo: "repo", RunnerLabels: tc.labels}}}}
+			assert.Equal(t, conf.Validate() != nil, tc.wantError)
+		})
+	}
 }

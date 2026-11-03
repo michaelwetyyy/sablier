@@ -118,7 +118,25 @@ failure_policy: last-known
 
 ## Gitea Actions source
 
-The `gitea-actions` source asks Gitea for one run in each active state (`queued`, `pending`, and `in_progress`). If any of those queries returns a run, the source reports demand. This avoids scanning historical terminal runs and keeps polling fast on repositories with long Actions history. The token file is optional for publicly readable repositories and is read again on every poll so Kubernetes Secret rotation does not require restarting the bridge.
+By default, `gitea-actions` makes one request for the 20 most recent workflow runs, including pull requests (`exclude_pull_requests=false`). Queued, pending, in-progress, running and waiting runs retain demand. Omitting `runner_labels` or setting it to an empty list preserves this behavior.
+
+For a target that can execute only some jobs, declare its complete runner capabilities:
+
+```yaml
+gitea_actions:
+  url: https://gitea.example.com
+  owner: example
+  repo: project
+  runner_labels: [validation-check, linux]
+```
+
+This optional mode requires a Gitea API supporting repository Actions job listing and job `labels` (verified against Gitea 1.27.3). It requests `/api/v1/repos/{owner}/{repo}/actions/jobs` with repeated `status=queued`, `status=in_progress`, and `status=pending` filters, sorted by ascending ID. These filters select waiting, running, and blocked jobs. It scans active jobs directly, so terminal workflow history cannot hide demand behind the default 20-run window. Pull-request jobs are included.
+
+Every required label of an active job must appear in `runner_labels`; sharing one label is insufficient. These are declared capabilities, not labels discovered from an online runner, so a sleeping target can still be selected. Blank and duplicate configured labels are rejected. For example, a helper declaring `validation-check` excludes jobs requiring only `validation-primary`, and excludes jobs requiring both labels. Keep primary-only smoke tests or privileged jobs on their intended target; declaring extra capabilities does not change scheduling or permissions.
+
+Pages contain up to 50 jobs. A poll must account for the complete `total_count`, with at most 100 pages (5,000 jobs). Missing or malformed active-job labels, unsupported responses, API failures, changing totals, incomplete or repeated pages, and the page limit produce a source error rather than an idle result. Requests use fixed endpoints and do not follow redirects. A positive result requires a complete valid scan too. Configure the existing failure policy for uncertainty: `awake` retains demand, `ignore` permits expiry, and `last-known` preserves the last successful observation (failing awake before the first success).
+
+The token file is optional for publicly readable repositories and is read again on every poll so Kubernetes Secret rotation does not require restarting the bridge.
 
 ## Parhelion source
 

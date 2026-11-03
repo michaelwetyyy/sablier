@@ -103,3 +103,25 @@ func TestManagerLastKnownPolicyPreservesSuccessfulState(t *testing.T) {
 	manager.reconcile(t.Context(), manager.sources[0])
 	assert.Equal(t, len(poker.calls), 2)
 }
+
+func TestManagerSharedTargetKeepsDemandFromAnySource(t *testing.T) {
+	t.Parallel()
+	poker := &fakePoker{}
+	target := TargetConfig{Group: "shared-workers"}
+	sources := []NamedSource{
+		{Config: SourceConfig{Name: "active-repository", FailurePolicy: FailurePolicyLastKnown, IdleAfter: time.Minute, Target: target}, Source: fakeSource{active: true}},
+		{Config: SourceConfig{Name: "idle-repository", FailurePolicy: FailurePolicyLastKnown, IdleAfter: time.Minute, Target: target}, Source: fakeSource{}},
+	}
+	manager := NewManagerWithSources(time.Second, poker, sources, testLogger())
+	manager.reconcile(t.Context(), sources[0])
+	manager.reconcile(t.Context(), sources[1])
+	assert.Equal(t, len(poker.calls), 1)
+	assert.Equal(t, poker.calls[0].target.Group, target.Group)
+	// An idle peer does not overwrite the active source's last-known state.
+	sources[0].Source = fakeSource{err: errors.New("unavailable")}
+	manager.reconcile(t.Context(), sources[0])
+	assert.Equal(t, len(poker.calls), 2)
+	sources[1].Source = fakeSource{err: errors.New("unavailable")}
+	manager.reconcile(t.Context(), sources[1])
+	assert.Equal(t, len(poker.calls), 2)
+}

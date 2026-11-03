@@ -49,10 +49,11 @@ type ParhelionConfig struct {
 }
 
 type GiteaActionsConfig struct {
-	URL       string `mapstructure:"url"`
-	TokenFile string `mapstructure:"token_file"`
-	Owner     string `mapstructure:"owner"`
-	Repo      string `mapstructure:"repo"`
+	RunnerLabels []string `mapstructure:"runner_labels"`
+	URL          string   `mapstructure:"url"`
+	TokenFile    string   `mapstructure:"token_file"`
+	Owner        string   `mapstructure:"owner"`
+	Repo         string   `mapstructure:"repo"`
 }
 
 const (
@@ -147,6 +148,16 @@ func (c Config) Validate() error {
 			}
 			if source.GiteaActions.Owner == "" || source.GiteaActions.Repo == "" {
 				return fmt.Errorf("%s.gitea_actions.owner and repo are required", prefix)
+			}
+			labels := make(map[string]struct{}, len(source.GiteaActions.RunnerLabels))
+			for _, label := range source.GiteaActions.RunnerLabels {
+				if strings.TrimSpace(label) == "" {
+					return fmt.Errorf("%s.gitea_actions.runner_labels must not contain blank labels", prefix)
+				}
+				if _, exists := labels[label]; exists {
+					return fmt.Errorf("%s.gitea_actions.runner_labels must not contain duplicate labels", prefix)
+				}
+				labels[label] = struct{}{}
 			}
 		default:
 			return fmt.Errorf("%s.type %q is unsupported", prefix, source.Type)

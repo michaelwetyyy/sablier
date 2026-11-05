@@ -5,16 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// buildResourcePatch creates a strategic-merge-patch JSON document that sets
-// the resource limits on the first container (identified by containerName) of a
-// pod template. Only the fields present in cpu/memory are included.
-func buildResourcePatch(containerName, cpu, memory string) ([]byte, error) {
+// resourceLimits validates only the explicitly supplied CPU/memory limits.
+func resourceLimits(cpu, memory string) (corev1.ResourceList, error) {
 	limits := corev1.ResourceList{}
 
 	if cpu != "" {
@@ -31,6 +30,15 @@ func buildResourcePatch(containerName, cpu, memory string) ([]byte, error) {
 			return nil, fmt.Errorf("invalid memory value %q: %w", memory, err)
 		}
 		limits[corev1.ResourceMemory] = q
+	}
+	return limits, nil
+}
+
+// buildResourcePatch preserves the existing strategic merge for other targets.
+func buildResourcePatch(containerName, cpu, memory string) ([]byte, error) {
+	limits, err := resourceLimits(cpu, memory)
+	if err != nil {
+		return nil, err
 	}
 
 	patch := map[string]any{
@@ -71,23 +79,65 @@ func (p *Provider) scaleDeploymentResources(ctx context.Context, config ParsedNa
 	if err != nil {
 		return fmt.Errorf("cannot get deployment: %w", err)
 	}
+	if isMaintenancePrimary(config) {
+		if err := checkMaintenancePrimarySnapshot(config, d); err != nil {
+			return err
+		}
+	}
 
 	if len(d.Spec.Template.Spec.Containers) == 0 {
 		return fmt.Errorf("deployment %s/%s has no containers", config.Namespace, config.Name)
 	}
 
-	patchData, err := buildResourcePatch(d.Spec.Template.Spec.Containers[0].Name, cpu, memory)
+	patchType := types.StrategicMergePatchType
+	var patchData []byte
+	if isMaintenancePrimary(config) {
+		patchType = types.JSONPatchType
+		patchData, err = buildMaintenanceResourcePatch(d, cpu, memory)
+	} else {
+		patchData, err = buildResourcePatch(d.Spec.Template.Spec.Containers[0].Name, cpu, memory)
+	}
 	if err != nil {
 		return err
 	}
 
 	_, err = p.Client.AppsV1().Deployments(config.Namespace).Patch(
-		ctx, config.Name, types.StrategicMergePatchType, patchData, metav1.PatchOptions{},
+		ctx, config.Name, patchType, patchData, metav1.PatchOptions{},
 	)
 	if err != nil {
 		return fmt.Errorf("cannot patch deployment resources: %w", err)
 	}
 	return nil
+}
+
+// The full-object UID/RV tests bind the resource write to the same unmarked
+// snapshot. Replacing the complete typed Resources value preserves requests,
+// other limits and claims, and works even when the resources field was absent.
+// Do not retry a failed test or reuse the preceding replica write's snapshot.
+func buildMaintenanceResourcePatch(d *appsv1.Deployment, cpu, memory string) ([]byte, error) {
+	limits, err := resourceLimits(cpu, memory)
+	if err != nil {
+		return nil, err
+	}
+	container := d.Spec.Template.Spec.Containers[0]
+	resources := container.Resources.DeepCopy()
+	if resources.Limits == nil {
+		resources.Limits = corev1.ResourceList{}
+	}
+	for name, quantity := range limits {
+		resources.Limits[name] = quantity
+	}
+	type operation struct {
+		Op    string `json:"op"`
+		Path  string `json:"path"`
+		Value any    `json:"value"`
+	}
+	return json.Marshal([]operation{
+		{Op: "test", Path: "/metadata/uid", Value: d.UID},
+		{Op: "test", Path: "/metadata/resourceVersion", Value: d.ResourceVersion},
+		{Op: "test", Path: "/spec/template/spec/containers/0/name", Value: container.Name},
+		{Op: "add", Path: "/spec/template/spec/containers/0/resources", Value: resources},
+	})
 }
 
 func (p *Provider) scaleStatefulSetResources(ctx context.Context, config ParsedName, cpu, memory string) error {

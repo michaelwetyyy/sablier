@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,7 +28,7 @@ func maintenancePrimaryFixture() (ParsedName, *appsv1.Deployment) {
 }
 
 func maintenanceTestProvider(client *fake.Clientset) *Provider {
-	return &Provider{Client: client, delimiter: "_", l: slog.Default(), tracer: trace.NewNoopTracerProvider().Tracer("maintenance-fence-test")}
+	return &Provider{Client: client, delimiter: "_", l: slog.Default(), tracer: noop.NewTracerProvider().Tracer("maintenance-fence-test")}
 }
 
 func requireOnlyDeploymentGet(t *testing.T, client *fake.Clientset) {

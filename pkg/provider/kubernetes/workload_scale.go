@@ -13,10 +13,6 @@ type Workload interface {
 }
 
 func (p *Provider) scale(ctx context.Context, config ParsedName, replicas int32) error {
-	if isMaintenancePrimary(config) {
-		return p.scaleMaintenancePrimary(ctx, config, replicas)
-	}
-
 	var workload Workload
 
 	switch config.Kind {
